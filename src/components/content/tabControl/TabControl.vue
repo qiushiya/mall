@@ -16,7 +16,7 @@ export default {
     titles: {
       type: Array,
       default() {
-        return []
+        return ['流行', '新款', '精选']
       }
     }
   },

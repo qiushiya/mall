@@ -3,19 +3,24 @@
     <nav-bar class="home-nav">
       <div slot="center">购物街</div>
     </nav-bar>
-
+    <tab-control :titles="['流行', '新款', '精选']"
+                 @tabClick="tabClick"
+                 ref="tabControl1"
+                 class="tab-control"
+                 v-show="isTabFixed"/>
     <scroll class="content"
             ref="scroll"
             :probe-type="3"
             @scroll="contentScroll"
             :pull-up-load="true"
             @pullingUp="loadMore">
-      <home-swiper :banners="banners"/>
+      <home-swiper :banners="banners"
+                   @swiperImageLoad="swiperImageLoad"/>
       <recommend-view :recommends="recommends"/>
       <feature-view/>
-      <tab-control class="tab-control"
-                   :titles="['流行', '新款', '精选']"
-                   @tabClick="tabClick"/>
+      <tab-control :titles="['流行', '新款', '精选']"
+                   @tabClick="tabClick"
+                   ref="tabControl2"/>
       <goods-list :goods="showGoods"/>
     </scroll>
 
@@ -32,9 +37,10 @@ import NavBar from "components/common/navbar/NavBar";
 import TabControl from "components/content/tabControl/TabControl";
 import GoodsList from "components/content/goods/GoodsList";
 import Scroll from "components/common/scroll/Scroll";
-import BackTop from "components/content/backtop/BackTop";
 
 import {getHomeMultidata, getHomeGoods} from "network/home";
+import {debounce} from "common/utils";
+import {itemListenerMixin, backTopMixin} from "common/mixin";
 
 export default {
   name: "Home",
@@ -45,9 +51,9 @@ export default {
     NavBar,
     TabControl,
     GoodsList,
-    Scroll,
-    BackTop
+    Scroll
   },
+  mixins: [itemListenerMixin, backTopMixin],
   data() {
     return {
       banners: [],
@@ -58,13 +64,30 @@ export default {
         'sell': {page: 0, list: []}
       },
       currentType: 'pop',
-      isShowBackTop: false
+      tabOffsetTop: 0,
+      isTabFixed: false,
+      saveY: 0,
+      // itemImgListener: null
     }
   },
   computed: {
     showGoods() {
       return this.goods[this.currentType].list
     }
+  },
+  destroyed() {
+    console.log('home destroyed');
+  },
+  activated() {
+    this.$refs.scroll.scrollTo(0, this.saveY, 0)
+    this.$refs.scroll.refresh()
+  },
+  deactivated() {
+    // 1. 保存Y值
+    this.saveY = this.$refs.scroll.getScrollY()
+
+    // 2. 取消全局事件的监听
+    this.$bus.$off('itemImageLoad', this.itemImgListener)
   },
   created() {
     // 1. 请求多个数据
@@ -74,6 +97,8 @@ export default {
     this.getHomeGoods('pop')
     this.getHomeGoods('new')
     this.getHomeGoods('sell')
+  },
+  mounted() {
   },
   methods: {
     /**
@@ -91,33 +116,43 @@ export default {
           this.currentType = 'sell'
           break
       }
-    },
-    backClick() {
-      this.$refs.scroll.scrollTo(0, 0)
+      this.$refs.tabControl1.currentIndex = index;
+      this.$refs.tabControl2.currentIndex = index;
     },
     contentScroll(position) {
+      // 1. 判断BackTop是否显示
       this.isShowBackTop = (-position.y) > 1000
+
+      // 2. 决定tabControl是否吸顶（position: fixed）
+      this.isTabFixed = (-position.y) > this.tabOffsetTop
     },
     loadMore() {
+      // console.log('加载更多的方法');
       this.getHomeGoods(this.currentType)
     },
-
+    swiperImageLoad() {
+      // 获取tabControl的offsetTop
+      // 所有的组件都有一个$el：用于获取组件中的元素
+      this.tabOffsetTop = this.$refs.tabControl2.$el.offsetTop;
+    },
     /**
      * 网络请求相关的方法
      */
     getHomeMultidata() {
       getHomeMultidata().then(res => {
-        // console.log(res);
         this.banners = res.data.banner.list;
         this.recommends = res.data.recommend.list;
       })
     },
     getHomeGoods(type) {
+      // 获取页码
       const page = this.goods[type].page + 1;
       getHomeGoods(type, page).then(res => {
         this.goods[type].list.push(...res.data.list)
+        // 实现页码加1
         this.goods[type].page += 1
 
+        // 完成上拉加载更多
         this.$refs.scroll.finishPullUp()
       })
     }
@@ -127,24 +162,20 @@ export default {
 
 <style scoped>
   #home {
-    padding-top: 44px;
+    /*padding-top: 44px;*/
     height: 100vh;
     position: relative;
   }
   .home-nav {
     background-color: var(--color-tint);
     color: #ffffff;
-    position: fixed;
-    left: 0;
-    right: 0;
-    top: 0;
-    z-index: 9;
-  }
 
-  .tab-control {
-    position: sticky;
-    top: 44px;
-    z-index: 9;
+    /*在使用浏览器原生滚动时，为了让导航不跟随一起滚动*/
+    /*position: fixed;*/
+    /*left: 0;*/
+    /*right: 0;*/
+    /*top: 0;*/
+    /*z-index: 9;*/
   }
 
   .content {
@@ -156,6 +187,11 @@ export default {
     bottom: 49px;
     left: 0;
     right: 0;
+  }
+
+  .tab-control {
+    position: relative;
+    z-index: 9;
   }
 
   /*.content {*/
